@@ -1,41 +1,55 @@
-"""make.fun news-image-20261121 entry.
+"""Entry point for the make.fun news-image-20261121 submission.
 
-Writes the entry image to the output directory as entry.png.
-The image (entry.png, beside this file) sums up the world news of
-Saturday 21 November 2026; it was designed in design.html and rendered
-to PNG by render.mjs. This program's job is only to deliver those
-exact bytes, unchanged, on every run.
+The front page for Saturday 21 November 2026 lives in this repository
+as entry.png (typeset from design.html with headless Chrome). The
+grader runs this program twice with no network; its only job is to
+place those exact bytes at <output>/entry.png, so both runs produce
+identical output.
 """
 
 import os
-import shutil
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-SOURCE = os.path.join(HERE, "entry.png")
-MAX_BYTES = 1_048_576  # the gate's 1 MiB cap
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+JPEG_MAGIC = b"\xff\xd8\xff"
+SIZE_LIMIT = 1_048_576  # the gate's 1 MiB cap
+
+SOURCE_NAME = "entry.png"
 
 
-def main() -> int:
-    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
-    os.makedirs(out_dir, exist_ok=True)
-    with open(SOURCE, "rb") as fh:
-        data = fh.read()
-    if not (data.startswith(b"\x89PNG\r\n\x1a\n") or data.startswith(b"\xff\xd8\xff")):
-        print("entry image is neither PNG nor JPEG", file=sys.stderr)
+def _read_source() -> bytes:
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(here, SOURCE_NAME)
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
+def _check_image(blob: bytes) -> str | None:
+    if not (blob.startswith(PNG_MAGIC) or blob.startswith(JPEG_MAGIC)):
+        return "entry image is neither PNG nor JPEG"
+    if len(blob) > SIZE_LIMIT:
+        return "entry image exceeds the 1 MiB cap"
+    return None
+
+
+def run() -> int:
+    blob = _read_source()
+    problem = _check_image(blob)
+    if problem is not None:
+        print(problem, file=sys.stderr)
         return 1
-    if len(data) > MAX_BYTES:
-        print("entry image exceeds the 1 MiB cap", file=sys.stderr)
+    target_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
+    os.makedirs(target_dir, exist_ok=True)
+    target = os.path.join(target_dir, SOURCE_NAME)
+    with open(target, "wb") as handle:
+        handle.write(blob)
+    written = os.path.getsize(target)
+    if written != len(blob):
+        print("short write of entry image", file=sys.stderr)
         return 1
-    dest = os.path.join(out_dir, "entry.png")
-    with open(dest, "wb") as fh:
-        fh.write(data)
-    # Copy once more from the source of truth if the write was partial.
-    if os.path.getsize(dest) != len(data):
-        shutil.copyfile(SOURCE, dest)
-    print(f"wrote {dest} ({len(data)} bytes)")
+    print(f"wrote {target} ({written} bytes)")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run())
